@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMART BUZZER — Peserta</title>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:#fff8e7; --bg2:#ffeaa7; --yellow:#ffd93d; --yellow-soft:#fff3b0;
+  --red:#ff6b6b; --red-soft:#ffb3b3; --green:#26de81;
+  --text:#2d2d2d; --text-soft:#6b6b6b; --dim:#999;
+}
+html, body { height:100%; font-family:'Segoe UI',system-ui,sans-serif; color:var(--text); overflow:hidden; }
+body {
+  background:
+    radial-gradient(ellipse at 20% 0%, var(--yellow-soft) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, var(--red-soft) 0%, transparent 50%),
+    linear-gradient(135deg, var(--bg) 0%, var(--bg2) 100%);
+}
+
+/* SETUP */
+.setup {
+  position:fixed; inset:0; z-index:100;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:20px; overflow-y:auto;
+  background: linear-gradient(135deg, #fff8e7 0%, #ffeaa7 100%);
+}
+.setup h1 {
+  font-size:clamp(2rem,7vw,3.5rem); font-weight:900; text-align:center;
+  background:linear-gradient(90deg,#ee5253,#f6c90e,#ee5253);
+  background-size:200% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+  animation:shine 3s linear infinite; margin-bottom:10px;
+}
+@keyframes shine { to { background-position:200% 0; } }
+.setup .sub { color:#6b6b6b; font-size:1.05rem; margin-bottom:30px; text-align:center; max-width:520px; }
+.setup-card {
+  background:#fff; border:3px solid #ffd93d; border-radius:24px;
+  padding:30px; max-width:460px; width:100%;
+  box-shadow:0 20px 60px rgba(238,82,83,0.15);
+}
+.setup-card h2 { font-size:1.4rem; color:#ee5253; margin-bottom:6px; text-align:center; }
+.setup-card .sub2 { text-align:center; color:#6b6b6b; margin-bottom:20px; font-size:0.88rem; line-height:1.5; }
+
+.code-input-wrap { display:flex; gap:8px; justify-content:center; margin:20px 0; }
+.code-digit {
+  width:52px; height:64px; border-radius:12px; border:3px solid #ffd93d;
+  background:#fff; font-family:'Courier New',monospace; font-size:1.8rem;
+  font-weight:900; text-align:center; outline:none;
+}
+.code-digit:focus { border-color:#ff6b6b; }
+@media (max-width:500px) {
+  .code-digit { width:44px; height:54px; font-size:1.4rem; }
+}
+
+.btn-start {
+  width:100%; padding:16px; background:linear-gradient(135deg,#ff6b6b,#ee5253);
+  border:none; border-radius:12px; color:white; font-size:1rem;
+  font-weight:900; cursor:pointer; letter-spacing:1px; text-transform:uppercase;
+  box-shadow:0 8px 24px rgba(238,82,83,0.4);
+}
+.btn-start:hover { transform:translateY(-2px); }
+.btn-secondary {
+  width:100%; padding:16px; background:#fff; color:#ee5253;
+  border:2px solid #ffd93d; border-radius:12px; font-size:1rem;
+  font-weight:900; cursor:pointer; text-transform:uppercase;
+  margin-top:10px;
+}
+
+/* APP */
+.app { height:100vh; display:flex; flex-direction:column; padding:12px; gap:12px; }
+.app.hidden { display:none; }
+.header {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 22px; background:#fff; border:2px solid #ffd93d;
+  border-radius:16px; flex-wrap:wrap; gap:10px;
+}
+.logo { font-weight:900; color:#ee5253; font-size:1.15rem; }
+.room-badge {
+  display:flex; align-items:center; gap:8px;
+  background:linear-gradient(135deg,#ffd93d,#f6c90e);
+  border:2px solid #f6c90e; padding:8px 16px; border-radius:12px;
+}
+.room-badge .lbl { font-size:0.6rem; font-weight:800; color:#6b5a00; }
+.room-badge .code { font-family:'Courier New',monospace; font-size:1.1rem; font-weight:900; letter-spacing:3px; }
+
+/* STAGE PESERTA */
+.peserta-stage {
+  flex:1; background:#fff; border:3px solid #ffd93d; border-radius:20px;
+  padding:22px; display:flex; flex-direction:column; gap:14px;
+  min-height:0; position:relative; overflow:hidden;
+}
+.peserta-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.peserta-team-badge {
+  display:flex; align-items:center; gap:10px; background:#fff;
+  border:2px solid #ff6b6b; padding:8px 16px; border-radius:12px;
+}
+.peserta-team-badge .dot { width:16px; height:16px; border-radius:50%; }
+.peserta-team-badge .name { font-weight:900; font-size:1rem; color:#ee5253; }
+.peserta-status { padding:8px 16px; border-radius:20px; font-size:0.85rem; font-weight:800; }
+.chip { font-size:0.7rem; font-weight:800; padding:6px 14px; border-radius:20px; text-transform:uppercase; }
+.chip.stby { background:rgba(107,107,107,0.15); color:#6b6b6b; }
+.chip.siap { background:rgba(38,222,129,0.2); color:#20bf6b; animation:pulse 1s infinite; }
+.chip.hit { background:rgba(238,82,83,0.2); color:#ee5253; }
+@keyframes pulse { 50% { opacity:0.4; } }
+
+.peserta-btn-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:20px; }
+.peserta-buzz-btn {
+  width:min(75vw,75vh,500px); height:min(75vw,75vh,500px);
+  border-radius:50%; border:8px solid #ff6b6b;
+  background:radial-gradient(circle at 35% 30%, #ffd93d 0%, #ff9f43 40%, #ff6b6b 80%);
+  color:#fff; font-size:clamp(2rem,6vw,4rem); font-weight:900;
+  cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:8px; transition:all 0.2s; font-family:inherit; user-select:none;
+}
+.peserta-buzz-btn:disabled { opacity:0.35; cursor:not-allowed; filter:grayscale(0.4); }
+.peserta-buzz-btn:not(:disabled):hover { transform:scale(1.05); }
+.peserta-buzz-btn:not(:disabled):active { transform:scale(0.93); }
+.peserta-buzz-btn .b-icon { font-size:clamp(3rem,8vw,6rem); }
+.peserta-buzz-btn .b-text { font-size:clamp(1rem,2.5vw,1.6rem); letter-spacing:2px; }
+.peserta-buzz-btn.locked { border-color:#b8b8b8; background:radial-gradient(circle at 35% 30%, #e0e0e0 0%, #b8b8b8 80%); color:#6b6b6b; }
+.peserta-buzz-btn.taken { border-color:#6b6b6b; background:radial-gradient(circle at 35% 30%, #a8a8a8 0%, #6b6b6b 80%); }
+.peserta-buzz-btn.success { border-color:#26de81; background:radial-gradient(circle at 35% 30%, #a8f0c8 0%, #26de81 80%); animation:successPulse 0.8s infinite; }
+@keyframes successPulse {
+  0%,100% { box-shadow:0 20px 60px rgba(38,222,129,0.5); }
+  50% { box-shadow:0 30px 80px rgba(38,222,129,0.8); }
+}
+
+/* TIMER MINI */
+.timer-mini {
+  background:#fff8e7; border-radius:12px; padding:10px 14px;
+  border:2px dashed #ffd93d; text-align:center;
+}
+.timer-mini .tm-label { font-size:0.65rem; font-weight:900; color:#ee5253; letter-spacing:1px; text-transform:uppercase; }
+.timer-mini .tm-time { font-family:'Courier New',monospace; font-size:1.6rem; font-weight:900; color:#2d2d2d; }
+
+/* MODAL PILIH REGU */
+.modal-overlay {
+  position:fixed; inset:0; background:rgba(45,27,46,0.7);
+  backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center;
+  z-index:200; padding:16px; overflow-y:auto;
+}
+.modal-overlay.hidden { display:none; }
+.modal {
+  background:#fff; border:3px solid #ffd93d; border-radius:24px;
+  padding:30px; max-width:560px; width:100%; max-height:90vh; overflow-y:auto;
+}
+.modal h2 { font-size:1.5rem; color:#ee5253; margin-bottom:6px; text-align:center; }
+.modal .sub { text-align:center; color:#6b6b6b; margin-bottom:22px; font-size:0.88rem; }
+
+.team-choices { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+@media (max-width:500px) { .team-choices { grid-template-columns:repeat(2,1fr); } }
+.team-choice {
+  padding:20px 8px; border-radius:14px; font-family:inherit; font-weight:900;
+  font-size:0.85rem; cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; gap:6px; transition:all 0.15s;
+  border:3px solid #ddd; background:#fff; color:#999;
+}
+.team-choice .tc-num { font-size:1.8rem; }
+.team-choice .tc-status { font-size:0.6rem; font-weight:800; padding:2px 6px; border-radius:6px; }
+.team-choice.kosong { border-color:currentColor; color:#2d2d2d; }
+.team-choice.kosong:hover { transform:scale(1.05); }
+.team-choice.terpakai { cursor:not-allowed; opacity:0.55; background:#f0f0f0; border-style:dashed; }
+.team-choice.mine { animation:minePulse 1.5s infinite; }
+@keyframes minePulse {
+  0%,100% { box-shadow:0 0 0 0 rgba(38,222,129,0.5); }
+  50% { box-shadow:0 0 0 8px rgba(38,222,129,0); }
+}
+
+.btn-primary {
+  width:100%; padding:16px; background:linear-gradient(135deg,#ff6b6b,#ee5253);
+  border:none; border-radius:12px; color:white; font-size:1rem;
+  font-weight:900; cursor:pointer; letter-spacing:1px; text-transform:uppercase;
+}
+.btn-secondary {
+  width:100%; padding:16px; background:#fff; color:#ee5253;
+  border:2px solid #ffd93d; border-radius:12px; font-size:1rem;
+  font-weight:900; cursor:pointer; text-transform:uppercase;
+  margin-top:10px;
+}
+
+/* TOAST */
+.toast {
+  position:fixed; top:24px; left:50%; transform:translateX(-50%) translateY(-100px);
+  background:#fff; border:3px solid #ff6b6b; border-radius:14px;
+  padding:14px 26px; font-weight:800; z-index:300; font-size:0.9rem;
+  transition:transform 0.3s; max-width:90vw; text-align:center;
+}
+.toast.show { transform:translateX(-50%) translateY(0); }
+.toast.ok { border-color:#26de81; }
+.toast.warn { border-color:#ffd93d; }
+.toast.error { border-color:#ee5253; }
+
+/* STATUS */
+.status-bar {
+  position:fixed; bottom:8px; left:50%; transform:translateX(-50%);
+  background:#fff; border:2px solid #ffd93d; border-radius:20px;
+  padding:6px 16px; font-size:0.7rem; font-weight:800; color:#6b6b6b;
+  z-index:50; display:flex; gap:12px; align-items:center;
+}
+.status-dot { width:8px; height:8px; border-radius:50%; background:#999; }
+.status-dot.on { background:#26de81; animation:pulse 1.5s infinite; }
+.status-dot.off { background:#ee5253; }
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div class="setup" id="setup">
+  <h1>🎯 SMART BUZZER</h1>
+  <p class="sub">Masukkan kode room dari juri, atau scan QR yang ditampilkan</p>
+  <div class="setup-card">
+    <h2>🙋 Masuk sebagai Peserta</h2>
+    <p class="sub2">Ketik 6 digit kode, atau scan QR dari juri.</p>
+    <div class="code-input-wrap">
+      <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="0">
+      <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="1">
+      <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="2">
+      <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="3">
+      <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="4">
+      <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="5">
+    </div>
+    <button class="btn-start" onclick="joinRoom()">MASUK</button>
+    <button class="btn-secondary" onclick="window.location.href='juri.html'">Saya Juri →</button>
+  </div>
+</div>
+
+<!-- MODAL PILIH REGU -->
+<div class="modal-overlay hidden" id="teamChoiceModal">
+  <div class="modal">
+    <h2>🙋 Pilih Regu</h2>
+    <p class="sub" id="teamChoiceSub">Regu yang sudah terpakai ditandai dan tidak bisa dipilih.</p>
+    <div class="team-choices" id="teamChoicesBox"></div>
+    <button class="btn-secondary" onclick="closeModals()">BATAL</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app hidden" id="app">
+  <div class="header">
+    <div class="logo">🎯 SMART BUZZER</div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <div class="room-badge">
+        <div>
+          <div class="lbl">KODE ROOM</div>
+          <div class="code" id="roomCodeDisplay">------</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="peserta-stage">
+    <div class="peserta-header">
+      <div class="peserta-team-badge">
+        <span class="dot" id="pesertaDot"></span>
+        <span class="name" id="pesertaName">PESERTA</span>
+      </div>
+      <span class="peserta-status chip stby" id="pesertaStatus">MENUNGGU JURI</span>
+    </div>
+
+    <div class="timer-mini" id="timerMini" style="display:none;">
+      <div class="tm-label" id="timerMiniLabel">⏱ TIMER RONDE</div>
+      <div class="tm-time" id="timerMiniTime">--:--</div>
+    </div>
+
+    <div class="peserta-btn-wrap">
+      <button class="peserta-buzz-btn" id="pesertaBuzzBtn" disabled>
+        <span class="b-icon">🔔</span>
+        <span class="b-text" id="pesertaBtnText">TUNGGU</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="status-bar">
+  <span class="status-dot" id="netDot"></span>
+  <span id="netText">Offline</span>
+</div>
+
+<script>
+const state = {
+  roomCode: null,
+  deviceId: localStorage.getItem('sb_peserta_device') || (() => {
+    const id = 'PST-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    localStorage.setItem('sb_peserta_device', id);
+    return id;
+  })(),
+  teams: [],
+  devices: {},
+  totalReguAktif: 2,
+  buzzerArmed: false,
+  activeTeam: null,
+  roundTimer: null,
+  answerTimer: null,
+  settings: { roundDuration: 30, answerDuration: 15 },
+  pesertaTeamId: null,
+  bc: null,
+  peer: null,
+  hostConn: null,
+  connected: false,
+  _timerInt: null
+};
+
+/* UTIL */
+function loadRoom(code) {
+  try {
+    const raw = localStorage.getItem('sb_room_' + code);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) { return null; }
+}
+
+/* BROADCAST */
+function initBC() {
+  if ('BroadcastChannel' in window) {
+    try {
+      state.bc = new BroadcastChannel('smartbuzzer_v3');
+      state.bc.onmessage = (ev) => handleBusMessage(ev.data);
+    } catch (_) {}
+  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'sb_bus_msg' && e.newValue) {
+      try { handleBusMessage(JSON.parse(e.newValue)); } catch (_) {}
+    }
+  });
+}
+
+function busSend(msg) {
+  if (state.bc) { try { state.bc.postMessage(msg); } catch (_) {} }
+  try { localStorage.setItem('sb_bus_msg', JSON.stringify({ ...msg, _ts: Date.now() })); } catch (_) {}
+  if (state.hostConn && state.hostConn.open) {
+    try { state.hostConn.send(msg); } catch (_) {}
+  }
+}
+
+function handleBusMessage(msg) {
+  if (!msg || !msg.type) return;
+  if (msg.from === state.deviceId) return;
+  if (msg.to && msg.to !== state.deviceId) return;
+
+  switch (msg.type) {
+    case 'STATE_FULL':
+    case 'ARM':
+    case 'RESET':
+    case 'LOCK':
+    case 'EVALUATE':
+    case 'TEAM_COUNT':
+    case 'CODE_CHANGED':
+      // Sync state dari localStorage
+      const saved = loadRoom(state.roomCode);
+      if (saved) {
+        state.teams = saved.teams;
+        state.totalReguAktif = saved.totalReguAktif;
+        state.devices = saved.devices || {};
+        state.buzzerArmed = saved.buzzerArmed;
+        state.activeTeam = saved.activeTeam;
+        state.roundTimer = saved.roundTimer;
+        state.answerTimer = saved.answerTimer;
+        state.settings = saved.settings || state.settings;
+        if (msg.type === 'CODE_CHANGED' && msg.newCode) {
+          state.roomCode = msg.newCode;
+          document.getElementById('roomCodeDisplay').textContent = msg.newCode;
+          showToast('🔑 Kode room berganti: ' + msg.newCode, 'ok');
+        }
+        renderPeserta();
+        startTimer();
+      }
+      break;
+
+    case 'PESERTA_CLAIM_ACCEPT':
+      if (state.pendingClaim) {
+        clearTimeout(state.pendingClaim);
+        state.pendingClaim = null;
+      }
+      state.pesertaTeamId = msg.teamId;
+      closeModals();
+      enterApp();
+      showToast('✅ Kamu masuk sebagai ' + state.teams[msg.teamId].name, 'ok');
+      break;
+
+    case 'PESERTA_CLAIM_REJECT':
+      if (state.pendingClaim) {
+        clearTimeout(state.pendingClaim);
+        state.pendingClaim = null;
+      }
+      showToast('❌ ' + msg.reason, 'error');
+      openTeamChoice();
+      break;
+
+    case 'PESERTA_REJECT':
+      showToast('❌ ' + (msg.reason || 'Ditolak'), 'error');
+      break;
+
+    case 'PESERTA_BUZZ_ACCEPT':
+      showToast('🔔 Kamu menekan bel!', 'ok');
+      break;
+
+    case 'PESERTA_BUZZ_REJECT':
+      showToast('❌ ' + msg.reason, 'warn');
+      break;
+  }
+}
+
+/* PEERJS */
+function initPeer(roomCode, hostDeviceId) {
+  return new Promise((resolve) => {
+    if (typeof Peer === 'undefined') { resolve(null); return; }
+    try {
+      state.peer = new Peer('sb-peserta-' + state.deviceId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+      state.peer.on('open', (id) => {
+        console.log('PeerJS peserta:', id);
+        // Connect ke host
+        if (hostDeviceId) {
+          const hostPeerId = 'sb-host-' + roomCode;
+          const conn = state.peer.connect(hostPeerId);
+          conn.on('open', () => {
+            state.hostConn = conn;
+            state.connected = true;
+            updateNetStatus(true);
+            conn.on('data', (data) => handleBusMessage({ ...data, from: hostPeerId }));
+            conn.on('close', () => {
+              state.connected = false;
+              updateNetStatus(false);
+            });
+          });
+          conn.on('error', () => {
+            updateNetStatus(false);
+          });
+        }
+        resolve(state.peer);
+      });
+      state.peer.on('error', (err) => {
+        console.warn('PeerJS error:', err.type);
+        updateNetStatus(false);
+        resolve(null);
+      });
+      setTimeout(() => resolve(state.peer), 4000);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+function updateNetStatus(ok) {
+  const dot = document.getElementById('netDot');
+  const txt = document.getElementById('netText');
+  if (dot) dot.className = 'status-dot ' + (ok ? 'on' : 'off');
+  if (txt) txt.textContent = ok ? 'Online (P2P)' : 'Offline (lokal)';
+}
+
+/* JOIN */
+async function joinRoom() {
+  const code = [...document.querySelectorAll('.code-digit')].map(i => i.value).join('');
+  if (code.length !== 6) { showToast('⚠️ Kode harus 6 digit', 'warn'); return; }
+
+  const saved = loadRoom(code);
+  if (!saved) {
+    showToast('❌ Kode tidak dikenali. Pastikan juri sudah membuka room di perangkat ini, atau scan QR dari juri.', 'error');
+    SFX.fail();
+    return;
+  }
+
+  state.roomCode = code;
+  state.teams = saved.teams;
+  state.totalReguAktif = saved.totalReguAktif;
+  state.devices = saved.devices || {};
+  state.settings = saved.settings || state.settings;
+
+  // Cek kuota
+  if (!state.devices[state.deviceId] && Object.keys(state.devices).length >= state.totalReguAktif) {
+    showToast('❌ Room penuh.', 'error');
+    SFX.fail();
+    return;
+  }
+
+  // Daftar
+  if (!state.devices[state.deviceId]) {
+    state.devices[state.deviceId] = { deviceId: state.deviceId, teamId: null, teamName: null, joinedAt: Date.now() };
+  }
+  try {
+    localStorage.setItem('sb_room_' + code, JSON.stringify({
+      ...saved, devices: state.devices
+    }));
+  } catch (_) {}
+
+  busSend({ type: 'PESERTA_JOIN', from: state.deviceId, roomCode: code, deviceId: state.deviceId });
+
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('roomCodeDisplay').textContent = code;
+  openTeamChoice();
+
+  // Connect ke host via PeerJS
+  await initPeer(code, saved.hostDeviceId);
+
+  SFX.click();
+  showToast('✅ Terhubung ke room ' + code, 'ok');
+}
+
+/* PILIH REGU */
+function openTeamChoice() {
+  const box = document.getElementById('teamChoicesBox');
+  box.innerHTML = '';
+  document.getElementById('teamChoiceSub').textContent =
+    `Pilih regu Anda (${state.totalReguAktif} regu). Regu terpakai ditandai. Perangkat: ${state.deviceId}`;
+  for (let i = 0; i < state.totalReguAktif; i++) {
+    const t = state.teams[i];
+    if (!t) continue;
+    const occupant = Object.values(state.devices).find(d => d.teamId === i);
+    const isMine = occupant && occupant.deviceId === state.deviceId;
+    const isTaken = occupant && occupant.deviceId !== state.deviceId;
+    const btn = document.createElement('button');
+    btn.className = 'team-choice ' + (isMine ? 'mine' : (isTaken ? 'terpakai' : 'kosong'));
+    if (!isTaken) { btn.style.color = t.color; btn.style.borderColor = t.color; }
+    if (isMine) { btn.style.background = t.color; btn.style.color = 'white'; }
+    let status = '';
+    if (isMine) status = '<span class="tc-status" style="background:rgba(255,255,255,0.3); color:white;">REGUMU</span>';
+    else if (isTaken) status = `<span class="tc-status" style="background:rgba(107,107,107,0.2); color:#6b6b6b;">TERPAKAI</span>`;
+    else status = '<span class="tc-status" style="background:rgba(38,222,129,0.2); color:#20bf6b;">KOSONG</span>';
+    btn.innerHTML = `<span class="tc-num">${i+1}</span><span>${t.name}</span>${status}`;
+    btn.onclick = () => {
+      if (isTaken) { showToast('⚠️ Regu sudah terpakai', 'warn'); return; }
+      claimTeam(i);
+    };
+    box.appendChild(btn);
+  }
+  document.getElementById('teamChoiceModal').classList.remove('hidden');
+}
+
+function claimTeam(teamId) {
+  const occupant = Object.values(state.devices).find(d => d.teamId === teamId && d.deviceId !== state.deviceId);
+  if (occupant) {
+    showToast('⚠️ Regu sudah terpakai', 'warn');
+    SFX.fail();
+    return;
+  }
+  busSend({ type: 'PESERTA_CLAIM', from: state.deviceId, roomCode: state.roomCode, deviceId: state.deviceId, teamId });
+
+  state.pendingClaim = setTimeout(() => {
+    // Fallback: accept lokal jika tidak ada juri
+    if (state.pendingClaim) {
+      state.pendingClaim = null;
+      state.devices[state.deviceId].teamId = teamId;
+      state.devices[state.deviceId].teamName = state.teams[teamId].name;
+      try {
+        const saved = loadRoom(state.roomCode);
+        saved.devices = state.devices;
+        localStorage.setItem('sb_room_' + state.roomCode, JSON.stringify(saved));
+      } catch (_) {}
+      state.pesertaTeamId = teamId;
+      closeModals();
+      enterApp();
+      showToast('✅ Kamu masuk sebagai ' + state.teams[teamId].name, 'ok');
+    }
+  }, 2000);
+}
+
+function enterApp() {
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('roomCodeDisplay').textContent = state.roomCode;
+  renderPeserta();
+  startTimer();
+}
+
+/* RENDER */
+function renderPeserta() {
+  if (state.pesertaTeamId === null) return;
+  const t = state.teams[state.pesertaTeamId];
+  if (!t) return;
+
+  document.getElementById('pesertaDot').style.background = t.color;
+  document.getElementById('pesertaName').textContent = t.name;
+  document.getElementById('pesertaName').style.color = t.color;
+
+  const btn = document.getElementById('pesertaBuzzBtn');
+  const btnText = document.getElementById('pesertaBtnText');
+  const statusEl = document.getElementById('pesertaStatus');
+
+  btn.classList.remove('locked', 'taken', 'success');
+  if (state.activeTeam !== null) {
+    if (state.activeTeam === state.pesertaTeamId) {
+      btn.disabled = true;
+      btn.classList.add('success');
+      btnText.textContent = 'KAMU! 🎉';
+      statusEl.className = 'peserta-status chip siap';
+      statusEl.textContent = '✅ KAMU YANG DULUAN!';
+    } else {
+      btn.disabled = true;
+      btn.classList.add('taken');
+      btnText.textContent = 'SUDAH';
+      statusEl.className = 'peserta-status chip hit';
+      statusEl.textContent = '🔔 ' + state.teams[state.activeTeam].name + ' DULUAN';
+    }
+  } else if (state.buzzerArmed) {
+    btn.disabled = false;
+    btnText.textContent = 'TEKAN!';
+    statusEl.className = 'peserta-status chip siap';
+    statusEl.textContent = '🔔 TEKAN SEKARANG!';
+  } else {
+    btn.disabled = true;
+    btn.classList.add('locked');
+    btnText.textContent = 'TUNGGU';
+    statusEl.className = 'peserta-status chip stby';
+    statusEl.textContent = '⏳ MENUNGGU JURI';
+  }
+}
+
+/* BUZZ */
+function buzz() {
+  if (state.pesertaTeamId === null) return;
+  if (!state.buzzerArmed) return showToast('🔒 Bel belum dibuka', 'warn');
+  if (state.activeTeam !== null) return showToast('⚠️ Sudah ada yang lebih dulu', 'warn');
+
+  busSend({ type: 'PESERTA_BUZZ', from: state.deviceId, roomCode: state.roomCode, deviceId: state.deviceId });
+
+  // Optimistic update
+  state.activeTeam = state.pesertaTeamId;
+  state.buzzerArmed = false;
+  renderPeserta();
+  SFX.buzz(state.pesertaTeamId);
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+
+/* TIMER */
+function startTimer() {
+  if (state._timerInt) clearInterval(state._timerInt);
+  state._timerInt = setInterval(tickTimer, 100);
+  tickTimer();
+}
+
+function tickTimer() {
+  const mini = document.getElementById('timerMini');
+  if (state.roundTimer) {
+    mini.style.display = 'block';
+    document.getElementById('timerMiniLabel').textContent = '⏱ TIMER RONDE';
+    const remaining = Math.max(0, Math.ceil((state.roundTimer.endsAt - Date.now()) / 1000));
+    document.getElementById('timerMiniTime').textContent = formatTime(remaining);
+  } else if (state.answerTimer) {
+    mini.style.display = 'block';
+    document.getElementById('timerMiniLabel').textContent = '⏱ TIMER JAWAB';
+    const remaining = Math.max(0, Math.ceil((state.answerTimer.endsAt - Date.now()) / 1000));
+    document.getElementById('timerMiniTime').textContent = formatTime(remaining);
+  } else {
+    mini.style.display = 'none';
+  }
+}
+
+function formatTime(sec) {
+  if (sec < 0) sec = 0;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+/* UI */
+function closeModals() {
+  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'));
+}
+
+/* KODE INPUT */
+document.querySelectorAll('.code-digit').forEach(inp => {
+  inp.addEventListener('input', (e) => {
+    const val = e.target.value.replace(/\D/g, '');
+    e.target.value = val.slice(-1);
+    if (val && parseInt(e.target.dataset.idx) < 5) {
+      const next = document.querySelector(`.code-digit[data-idx="${parseInt(e.target.dataset.idx)+1}"]`);
+      if (next) next.focus();
+    }
+    if ([...document.querySelectorAll('.code-digit')].every(i => i.value)) {
+      setTimeout(joinRoom, 200);
+    }
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace' && !e.target.value) {
+      const prev = document.querySelector(`.code-digit[data-idx="${parseInt(e.target.dataset.idx)-1}"]`);
+      if (prev) prev.focus();
+    }
+  });
+});
+
+/* SFX */
+const SFX = (() => {
+  let ctx = null;
+  function c() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function beep(freq, dur, type, gainVal) {
+    try {
+      const ac = c();
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      const t = ac.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gainVal || 0.4, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + dur);
+    } catch (_) {}
+  }
+  return {
+    click() { beep(800, 0.05, 'sine', 0.2); },
+    buzz(i) {
+      const b = 500 + (i || 0) * 60;
+      beep(b, 0.25, 'square', 0.5);
+      beep(b * 1.5, 0.3, 'square', 0.4);
+      beep(b * 2, 0.35, 'sawtooth', 0.3);
+    },
+    fail() { beep(300, 0.15, 'sawtooth', 0.4); setTimeout(() => beep(200, 0.25, 'sawtooth', 0.4), 150); }
+  };
+})();
+
+let toastTimer = null;
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+/* AUTO-ISI DARI URL */
+function autoFillFromURL() {
+  try {
+    const params = new URLSearchParams(location.search);
+    const room = params.get('room');
+    if (!room || !/^\d{6}$/.test(room)) return;
+    const digits = room.split('');
+    document.querySelectorAll('.code-digit').forEach((inp, i) => {
+      inp.value = digits[i] || '';
+    });
+    setTimeout(() => joinRoom(), 300);
+  } catch (_) {}
+}
+
+/* INIT */
+document.getElementById('pesertaBuzzBtn').addEventListener('click', buzz);
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    buzz();
+  }
+});
+window.addEventListener('beforeunload', () => {
+  if (state.peer) try { state.peer.destroy(); } catch (_) {}
+  if (state.roomCode) busSend({ type: 'PESERTA_LEAVE', from: state.deviceId, roomCode: state.roomCode, deviceId: state.deviceId });
+});
+
+initBC();
+updateNetStatus(false);
+autoFillFromURL();
+</script>
+</body>
+</html>
