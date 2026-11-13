@@ -63,12 +63,6 @@ body {
   box-shadow:0 8px 24px rgba(238,82,83,0.4);
 }
 .btn-start:hover { transform:translateY(-2px); }
-.btn-secondary {
-  width:100%; padding:16px; background:#fff; color:#ee5253;
-  border:2px solid #ffd93d; border-radius:12px; font-size:1rem;
-  font-weight:900; cursor:pointer; text-transform:uppercase;
-  margin-top:10px;
-}
 
 /* APP */
 .app { height:100vh; display:flex; flex-direction:column; padding:12px; gap:12px; }
@@ -137,7 +131,7 @@ body {
 .timer-mini .tm-label { font-size:0.65rem; font-weight:900; color:#ee5253; letter-spacing:1px; text-transform:uppercase; }
 .timer-mini .tm-time { font-family:'Courier New',monospace; font-size:1.6rem; font-weight:900; color:#2d2d2d; }
 
-/* MODAL PILIH REGU */
+/* MODAL */
 .modal-overlay {
   position:fixed; inset:0; background:rgba(45,27,46,0.7);
   backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center;
@@ -170,11 +164,6 @@ body {
   50% { box-shadow:0 0 0 8px rgba(38,222,129,0); }
 }
 
-.btn-primary {
-  width:100%; padding:16px; background:linear-gradient(135deg,#ff6b6b,#ee5253);
-  border:none; border-radius:12px; color:white; font-size:1rem;
-  font-weight:900; cursor:pointer; letter-spacing:1px; text-transform:uppercase;
-}
 .btn-secondary {
   width:100%; padding:16px; background:#fff; color:#ee5253;
   border:2px solid #ffd93d; border-radius:12px; font-size:1rem;
@@ -214,7 +203,7 @@ body {
   <p class="sub">Masukkan kode room dari juri, atau scan QR yang ditampilkan</p>
   <div class="setup-card">
     <h2>🙋 Masuk sebagai Peserta</h2>
-    <p class="sub2">Ketik 6 digit kode, atau scan QR dari juri.</p>
+    <p class="sub2">Ketik 6 digit kode, atau scan QR dari juri. Otomatis terhubung.</p>
     <div class="code-input-wrap">
       <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="0">
       <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="1">
@@ -224,7 +213,6 @@ body {
       <input class="code-digit" maxlength="1" inputmode="numeric" data-idx="5">
     </div>
     <button class="btn-start" onclick="joinRoom()">MASUK</button>
-    <button class="btn-secondary" onclick="window.location.href='juri.html'">Saya Juri →</button>
   </div>
 </div>
 
@@ -303,6 +291,7 @@ const state = {
   peer: null,
   hostConn: null,
   connected: false,
+  pendingClaim: null,
   _timerInt: null
 };
 
@@ -319,20 +308,14 @@ function loadRoom(code) {
 function initBC() {
   if ('BroadcastChannel' in window) {
     try {
-      state.bc = new BroadcastChannel('smartbuzzer_v3');
+      state.bc = new BroadcastChannel('smartbuzzer_v4');
       state.bc.onmessage = (ev) => handleBusMessage(ev.data);
     } catch (_) {}
   }
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'sb_bus_msg' && e.newValue) {
-      try { handleBusMessage(JSON.parse(e.newValue)); } catch (_) {}
-    }
-  });
 }
 
 function busSend(msg) {
   if (state.bc) { try { state.bc.postMessage(msg); } catch (_) {} }
-  try { localStorage.setItem('sb_bus_msg', JSON.stringify({ ...msg, _ts: Date.now() })); } catch (_) {}
   if (state.hostConn && state.hostConn.open) {
     try { state.hostConn.send(msg); } catch (_) {}
   }
@@ -351,7 +334,6 @@ function handleBusMessage(msg) {
     case 'EVALUATE':
     case 'TEAM_COUNT':
     case 'CODE_CHANGED':
-      // Sync state dari localStorage
       const saved = loadRoom(state.roomCode);
       if (saved) {
         state.teams = saved.teams;
@@ -373,10 +355,7 @@ function handleBusMessage(msg) {
       break;
 
     case 'PESERTA_CLAIM_ACCEPT':
-      if (state.pendingClaim) {
-        clearTimeout(state.pendingClaim);
-        state.pendingClaim = null;
-      }
+      if (state.pendingClaim) { clearTimeout(state.pendingClaim); state.pendingClaim = null; }
       state.pesertaTeamId = msg.teamId;
       closeModals();
       enterApp();
@@ -384,10 +363,7 @@ function handleBusMessage(msg) {
       break;
 
     case 'PESERTA_CLAIM_REJECT':
-      if (state.pendingClaim) {
-        clearTimeout(state.pendingClaim);
-        state.pendingClaim = null;
-      }
+      if (state.pendingClaim) { clearTimeout(state.pendingClaim); state.pendingClaim = null; }
       showToast('❌ ' + msg.reason, 'error');
       openTeamChoice();
       break;
@@ -406,12 +382,12 @@ function handleBusMessage(msg) {
   }
 }
 
-/* PEERJS */
-function initPeer(roomCode, hostDeviceId) {
+/* PEERJS — auto connect ke host */
+function connectToHost(roomCode) {
   return new Promise((resolve) => {
     if (typeof Peer === 'undefined') { resolve(null); return; }
     try {
-      state.peer = new Peer('sb-peserta-' + state.deviceId, {
+      state.peer = new Peer('sb-peserta-' + state.deviceId + '-' + Date.now(), {
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
@@ -421,32 +397,33 @@ function initPeer(roomCode, hostDeviceId) {
       });
       state.peer.on('open', (id) => {
         console.log('PeerJS peserta:', id);
-        // Connect ke host
-        if (hostDeviceId) {
-          const hostPeerId = 'sb-host-' + roomCode;
-          const conn = state.peer.connect(hostPeerId);
-          conn.on('open', () => {
-            state.hostConn = conn;
-            state.connected = true;
-            updateNetStatus(true);
-            conn.on('data', (data) => handleBusMessage({ ...data, from: hostPeerId }));
-            conn.on('close', () => {
-              state.connected = false;
-              updateNetStatus(false);
-            });
-          });
-          conn.on('error', () => {
+        const hostPeerId = 'sb-host-' + roomCode;
+        const conn = state.peer.connect(hostPeerId, { reliable: true });
+        conn.on('open', () => {
+          state.hostConn = conn;
+          state.connected = true;
+          updateNetStatus(true);
+          conn.on('data', (data) => handleBusMessage({ ...data, from: hostPeerId, peerId: hostPeerId }));
+          conn.on('close', () => {
+            state.connected = false;
             updateNetStatus(false);
           });
-        }
-        resolve(state.peer);
+          // Kirim JOIN
+          conn.send({ type: 'PESERTA_JOIN', from: state.deviceId, roomCode, deviceId: state.deviceId, peerId: hostPeerId });
+          resolve(conn);
+        });
+        conn.on('error', (e) => {
+          console.warn('Conn error:', e);
+          updateNetStatus(false);
+          resolve(null);
+        });
       });
       state.peer.on('error', (err) => {
         console.warn('PeerJS error:', err.type);
         updateNetStatus(false);
         resolve(null);
       });
-      setTimeout(() => resolve(state.peer), 4000);
+      setTimeout(() => resolve(state.peer), 6000);
     } catch (e) {
       resolve(null);
     }
@@ -465,44 +442,45 @@ async function joinRoom() {
   const code = [...document.querySelectorAll('.code-digit')].map(i => i.value).join('');
   if (code.length !== 6) { showToast('⚠️ Kode harus 6 digit', 'warn'); return; }
 
-  const saved = loadRoom(code);
-  if (!saved) {
-    showToast('❌ Kode tidak dikenali. Pastikan juri sudah membuka room di perangkat ini, atau scan QR dari juri.', 'error');
-    SFX.fail();
-    return;
-  }
-
   state.roomCode = code;
-  state.teams = saved.teams;
-  state.totalReguAktif = saved.totalReguAktif;
-  state.devices = saved.devices || {};
-  state.settings = saved.settings || state.settings;
+  showToast('🔗 Menghubungkan ke room ' + code + '...', 'ok');
 
-  // Cek kuota
-  if (!state.devices[state.deviceId] && Object.keys(state.devices).length >= state.totalReguAktif) {
-    showToast('❌ Room penuh.', 'error');
+  // Coba load dari localStorage (jika tab sama / host di perangkat sama)
+  const saved = loadRoom(code);
+  if (saved) {
+    state.teams = saved.teams;
+    state.totalReguAktif = saved.totalReguAktif;
+    state.devices = saved.devices || {};
+    state.settings = saved.settings || state.settings;
+  }
+
+  // Selalu coba connect ke host via PeerJS
+  const conn = await connectToHost(code);
+
+  if (!conn && !saved) {
+    showToast('❌ Tidak bisa terhubung. Pastikan juri sudah membuka room di perangkat lain, dan kode benar.', 'error');
     SFX.fail();
     return;
   }
 
-  // Daftar
-  if (!state.devices[state.deviceId]) {
-    state.devices[state.deviceId] = { deviceId: state.deviceId, teamId: null, teamName: null, joinedAt: Date.now() };
+  // Daftar peserta
+  if (saved) {
+    if (!state.devices[state.deviceId] && Object.keys(state.devices).length >= state.totalReguAktif) {
+      showToast('❌ Room penuh.', 'error');
+      SFX.fail();
+      return;
+    }
+    if (!state.devices[state.deviceId]) {
+      state.devices[state.deviceId] = { deviceId: state.deviceId, teamId: null, teamName: null, joinedAt: Date.now() };
+    }
+    try {
+      localStorage.setItem('sb_room_' + code, JSON.stringify({ ...saved, devices: state.devices }));
+    } catch (_) {}
   }
-  try {
-    localStorage.setItem('sb_room_' + code, JSON.stringify({
-      ...saved, devices: state.devices
-    }));
-  } catch (_) {}
-
-  busSend({ type: 'PESERTA_JOIN', from: state.deviceId, roomCode: code, deviceId: state.deviceId });
 
   document.getElementById('setup').style.display = 'none';
   document.getElementById('roomCodeDisplay').textContent = code;
   openTeamChoice();
-
-  // Connect ke host via PeerJS
-  await initPeer(code, saved.hostDeviceId);
 
   SFX.click();
   showToast('✅ Terhubung ke room ' + code, 'ok');
@@ -512,6 +490,11 @@ async function joinRoom() {
 function openTeamChoice() {
   const box = document.getElementById('teamChoicesBox');
   box.innerHTML = '';
+  if (!state.teams.length) {
+    box.innerHTML = '<div style="text-align:center; color:#999; padding:20px; grid-column:1/-1;">Menunggu data dari juri...</div>';
+    document.getElementById('teamChoiceModal').classList.remove('hidden');
+    return;
+  }
   document.getElementById('teamChoiceSub').textContent =
     `Pilih regu Anda (${state.totalReguAktif} regu). Regu terpakai ditandai. Perangkat: ${state.deviceId}`;
   for (let i = 0; i < state.totalReguAktif; i++) {
@@ -545,25 +528,28 @@ function claimTeam(teamId) {
     SFX.fail();
     return;
   }
+
   busSend({ type: 'PESERTA_CLAIM', from: state.deviceId, roomCode: state.roomCode, deviceId: state.deviceId, teamId });
 
   state.pendingClaim = setTimeout(() => {
-    // Fallback: accept lokal jika tidak ada juri
     if (state.pendingClaim) {
       state.pendingClaim = null;
-      state.devices[state.deviceId].teamId = teamId;
-      state.devices[state.deviceId].teamName = state.teams[teamId].name;
-      try {
-        const saved = loadRoom(state.roomCode);
+      // Fallback lokal
+      if (state.devices[state.deviceId]) {
+        state.devices[state.deviceId].teamId = teamId;
+        state.devices[state.deviceId].teamName = state.teams[teamId].name;
+      }
+      const saved = loadRoom(state.roomCode);
+      if (saved) {
         saved.devices = state.devices;
-        localStorage.setItem('sb_room_' + state.roomCode, JSON.stringify(saved));
-      } catch (_) {}
+        try { localStorage.setItem('sb_room_' + state.roomCode, JSON.stringify(saved)); } catch (_) {}
+      }
       state.pesertaTeamId = teamId;
       closeModals();
       enterApp();
       showToast('✅ Kamu masuk sebagai ' + state.teams[teamId].name, 'ok');
     }
-  }, 2000);
+  }, 2500);
 }
 
 function enterApp() {
@@ -625,7 +611,6 @@ function buzz() {
 
   busSend({ type: 'PESERTA_BUZZ', from: state.deviceId, roomCode: state.roomCode, deviceId: state.deviceId });
 
-  // Optimistic update
   state.activeTeam = state.pesertaTeamId;
   state.buzzerArmed = false;
   renderPeserta();
@@ -744,7 +729,7 @@ function autoFillFromURL() {
     document.querySelectorAll('.code-digit').forEach((inp, i) => {
       inp.value = digits[i] || '';
     });
-    setTimeout(() => joinRoom(), 300);
+    setTimeout(() => joinRoom(), 400);
   } catch (_) {}
 }
 
